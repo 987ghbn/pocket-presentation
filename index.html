@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Доклад в презентацию</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#14213d">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pptxgenjs/3.12.0/pptxgen.bundle.js"></script>
+<style>
+:root{--ink:#14213d;--paper:#f7f5ef;--line:#d9d4c5;--accent:#e09f1f;--mute:#5b6478}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font:17px/1.5 Georgia,"Times New Roman",serif}
+main{max-width:760px;margin:0 auto;padding:20px 16px 48px}
+h1{font-size:1.9rem;line-height:1.15;margin:8px 0 4px}
+p.lead{margin:0 0 18px;color:var(--mute)}
+label{display:block;font-weight:bold;margin:14px 0 6px}
+textarea,input,select{width:100%;font:inherit;padding:10px;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--ink)}
+textarea{min-height:260px;resize:vertical}
+.row{display:flex;gap:12px;flex-wrap:wrap}.row>div{flex:1 1 160px}
+.btns{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0}
+button,.file{font:inherit;font-weight:bold;padding:12px 16px;border-radius:6px;border:2px solid var(--ink);background:#fff;color:var(--ink);cursor:pointer}
+button.main{background:var(--ink);color:#fff;flex:1 1 220px}
+button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.file input{display:none}
+#status{color:var(--mute);min-height:1.5em}
+#preview{margin-top:18px;display:grid;gap:10px}
+.sl{background:#fff;border:1px solid var(--line);border-left:6px solid var(--accent);padding:10px 14px;border-radius:4px}
+.sl b{display:block}.sl ul{margin:6px 0 0;padding-left:20px;color:var(--mute);font-size:.92rem}
+@media (prefers-color-scheme:dark){:root{--ink:#eef0f6;--paper:#10162a;--line:#2d3654;--mute:#a4adc4}
+textarea,input,select,.sl,button,.file{background:#1a2240}button.main{background:var(--accent);color:#14213d;border-color:var(--accent)}}
+</style>
+</head>
+<body>
+<main>
+<h1>Доклад в презентацию</h1>
+<p class="lead">Вставьте текст доклада — получите файл PowerPoint. Всё работает в браузере, текст никуда не отправляется.</p>
+
+<label for="title">Название презентации (необязательно)</label>
+<input id="title" placeholder="Если пусто — возьму первую строку текста">
+
+<label for="text">Текст доклада</label>
+<textarea id="text" placeholder="Вставьте текст. Заголовки лучше писать отдельной короткой строкой или с «#» в начале."></textarea>
+
+<div class="row">
+  <div><label for="max">Максимум слайдов</label><input id="max" type="number" min="3" max="60" value="12"></div>
+  <div><label for="theme">Оформление</label>
+    <select id="theme"><option value="navy">Тёмно-синий</option><option value="light">Светлый</option><option value="green">Зелёный</option></select></div>
+</div>
+
+<div class="btns">
+  <button class="main" id="go">Скачать .pptx</button>
+  <button id="prev">Показать план</button>
+  <button id="paste">Вставить из буфера</button>
+  <label class="file">Открыть .txt<input id="file" type="file" accept=".txt,.md,text/plain"></label>
+</div>
+<div id="status" role="status"></div>
+<div id="preview"></div>
+</main>
+
+<script>
+const THEMES={
+  navy:{bg:"14213D",title:"FFFFFF",text:"E5E7EB",accent:"E09F1F"},
+  light:{bg:"F7F5EF",title:"14213D",text:"2B3245",accent:"C2410C"},
+  green:{bg:"12372A",title:"F4F1DE",text:"DDE5DF",accent:"EDDD4A"}
+};
+const $=id=>document.getElementById(id);
+const say=m=>$("status").textContent=m;
+
+function shorten(s,n=110){s=s.trim();if(s.length<=n)return s;const c=s.slice(0,n-3);return c.slice(0,c.lastIndexOf(" ")>40?c.lastIndexOf(" "):c.length)+"…";}
+function sentences(t){return t.split(/(?<=[.!?…])\s+/).map(s=>s.trim()).filter(s=>s.length>2);}
+
+function isHeading(l,next){
+  if(/^#{1,3}\s/.test(l))return true;
+  if(l.length>80)return false;
+  if(/^(\d+[.)]|[IVX]+\.|Глава|Раздел|Часть)\s/i.test(l)&&!/[.!?]$/.test(l.replace(/^\S+\s/,"")))return true;
+  return l.length<=60&&!/[.!?:;,]$/.test(l)&&next&&next.length>l.length;
+}
+const clean=l=>l.replace(/^#{1,3}\s*/,"").replace(/^(\d+[.)]|[IVX]+\.)\s+/,"");
+
+function parse(raw,maxSlides){
+  const lines=raw.split(/\n+/).map(l=>l.trim()).filter(Boolean);
+  if(!lines.length)return null;
+  let title=$("title").value.trim();
+  if(!title){title=clean(lines[0]).length<=90?clean(lines[0]):"Презентация";if(clean(lines[0])===title)lines.shift();}
+  let secs=[],cur=null;
+  lines.forEach((l,i)=>{
+    if(isHeading(l,lines[i+1])){cur={title:clean(l),body:[]};secs.push(cur);}
+    else{if(!cur){cur={title:"",body:[]};secs.push(cur);}cur.body.push(l);}
+  });
+  if(secs.filter(s=>s.title).length<2){ // заголовков нет: абзац = раздел
+    secs=lines.map(p=>{const w=p.split(/\s+/);return{title:w.slice(0,6).join(" ")+(w.length>6?"…":""),body:[p]};});
+  }
+  let limit=99,slides;
+  for(;;){
+    slides=[];
+    secs.forEach(s=>{
+      const b=sentences(s.body.join(" ")).slice(0,limit).map(x=>shorten(x));
+      if(!b.length){slides.push({title:s.title||"…",bullets:[]});return;}
+      for(let i=0;i<b.length;i+=5)slides.push({title:(s.title||"Основное")+(i?" (прод.)":""),bullets:b.slice(i,i+5)});
+    });
+    if(slides.length<=maxSlides-2||limit<=1)break;
+    limit=limit>3?3:limit-1;
+  }
+  return{title,slides:slides.slice(0,Math.max(1,maxSlides-2))};
+}
+
+function plan(){
+  const maxSlides=Math.min(60,Math.max(3,+$("max").value||12));
+  const p=parse($("text").value,maxSlides);
+  if(!p){say("Сначала вставьте текст доклада.");return null;}
+  $("preview").innerHTML="";
+  [{title:p.title,bullets:[]},...p.slides].forEach(s=>{
+    const d=document.createElement("div");d.className="sl";
+    const b=document.createElement("b");b.textContent=s.title;d.append(b);
+    if(s.bullets.length){const u=document.createElement("ul");s.bullets.forEach(x=>{const li=document.createElement("li");li.textContent=x;u.append(li);});d.append(u);}
+    $("preview").append(d);
+  });
+  say("Слайдов: "+(p.slides.length+2)+" (с титульным и финальным)");
+  return p;
+}
+
+function build(){
+  const p=plan();if(!p)return;
+  if(typeof PptxGenJS==="undefined"){say("Библиотека не загрузилась. Проверьте интернет и обновите страницу.");return;}
+  const t=THEMES[$("theme").value],pres=new PptxGenJS();
+  pres.layout="LAYOUT_16x9";pres.title=p.title;
+  const F="Calibri";
+  let s=pres.addSlide();s.background={color:t.bg};
+  s.addShape(pres.ShapeType.rect,{x:0.6,y:2.2,w:0.12,h:1.6,fill:{color:t.accent}});
+  s.addText(p.title,{x:0.95,y:1.8,w:8.4,h:2.4,fontFace:F,fontSize:38,bold:true,color:t.title,valign:"middle",fit:"shrink"});
+  p.slides.forEach((c,i)=>{
+    s=pres.addSlide();s.background={color:t.bg};
+    s.addShape(pres.ShapeType.rect,{x:0,y:0,w:0.18,h:5.625,fill:{color:t.accent}});
+    s.addText(c.title,{x:0.6,y:0.35,w:8.8,h:0.95,fontFace:F,fontSize:28,bold:true,color:t.title,valign:"middle",fit:"shrink"});
+    if(c.bullets.length)s.addText(c.bullets.map(b=>({text:b,options:{bullet:{indent:18},breakLine:true,paraSpaceAfter:8}})),
+      {x:0.6,y:1.45,w:8.8,h:3.7,fontFace:F,fontSize:20,color:t.text,valign:"top",fit:"shrink"});
+    s.addText(String(i+2),{x:9,y:5.15,w:0.6,h:0.3,fontFace:F,fontSize:11,color:t.text,align:"right"});
+  });
+  s=pres.addSlide();s.background={color:t.bg};
+  s.addText("Спасибо за внимание!",{x:0.6,y:2,w:8.8,h:1.5,fontFace:F,fontSize:36,bold:true,color:t.title,align:"center"});
+  const name=p.title.replace(/[\\/:*?"<>|]+/g,"").slice(0,50)||"presentation";
+  pres.writeFile({fileName:name+".pptx"}).then(()=>say("Готово: файл «"+name+".pptx» скачан."));
+}
+
+$("go").onclick=build;$("prev").onclick=plan;
+$("paste").onclick=async()=>{try{$("text").value=await navigator.clipboard.readText();say("Текст вставлен.");}catch(e){say("Браузер не дал доступ к буферу — вставьте текст вручную.");}};
+$("file").onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{$("text").value=r.result;say("Файл «"+f.name+"» открыт.");};r.readAsText(f,"utf-8");};
+if("serviceWorker" in navigator&&location.protocol.startsWith("http"))navigator.serviceWorker.register("sw.js").catch(()=>{});
+</script>
+</body>
+</html>
